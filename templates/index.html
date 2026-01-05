@@ -108,8 +108,15 @@
         <!-- Camera Controls -->
         <div class="camera-controls">
             <h2>Camera</h2>
-            <form id="find-person-form" action="/find_person" method="post">
-                <button type="submit" id="find-person-btn">Find Person</button>
+            <form id="find-person-form">
+                <label for="person-select" style="margin-right: 10px;">Find Person:</label>
+                <select name="person" id="person-select" required>
+                    <option value="">--Please choose a person--</option>
+                    <option value="gaurav">Gaurav</option>
+                    <option value="shilpi">Shilpi</option>
+                    <option value="elle">Elle</option>
+                </select>
+                <button type="submit" id="find-person-btn" style="margin-left: 10px;">Start Pan-and-Scan Search</button>
             </form>
             <p id="loading-indicator">Processing...</p>
         </div>
@@ -119,7 +126,10 @@
             <h2>Latest Recognition</h2>
             <div id="results-text">No recognition task run yet.</div>
             <div id="result-image-container">
-                <img id="result-image" src="" alt="Recognition result will be shown here.">
+                <img id="result-image" src="" alt="Recognition result will be shown here." style="display: none;">
+            </div>
+            <div id="result-video-container" style="margin-top: 15px;">
+                <video id="result-video" style="max-width: 100%; border-radius: 8px; display: none;" controls autoplay muted playsinline></video>
             </div>
             <div id="summary-container" style="margin-top: 15px;">
                 <h3>AI Summary:</h3>
@@ -128,130 +138,377 @@
         </div>
     </div>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // --- New Motor Control Script ---
-            const motorButtons = document.querySelectorAll('.control-grid button[data-action]');
-            
-            const sendCommand = (action) => {
-                fetch(action, { method: 'POST' })
-                    .catch(error => console.error('Command Error:', error));
-            };
+        <script>
 
-            motorButtons.forEach(button => {
-                const action = button.dataset.action;
+            document.addEventListener('DOMContentLoaded', function() {
+
+                // --- Motor Control Script ---
+
+                const motorButtons = document.querySelectorAll('.control-grid button[data-action]');
+
+                const sendCommand = (action) => {
+
+                    fetch(action, { method: 'POST' }).catch(error => console.error('Command Error:', error));
+
+                };
+
+                motorButtons.forEach(button => {
+
+                    const action = button.dataset.action;
+
+                    button.addEventListener('mousedown', () => sendCommand(action));
+
+                    button.addEventListener('touchstart', (e) => { e.preventDefault(); sendCommand(action); });
+
+                    const stopMovement = () => sendCommand('/stop');
+
+                    button.addEventListener('mouseup', stopMovement);
+
+                    button.addEventListener('mouseleave', stopMovement);
+
+                    button.addEventListener('touchend', stopMovement);
+
+                });
+
+    
+
+                // --- UI Elements ---
+
+                const findPersonForm = document.getElementById('find-person-form');
+
+                const personSelect = document.getElementById('person-select');
+
+                const findButton = document.getElementById('find-person-btn');
+
+                const loadingIndicator = document.getElementById('loading-indicator');
+
+                const resultsText = document.getElementById('results-text');
+
+                const resultImage = document.getElementById('result-image');
+
+                const resultVideo = document.getElementById('result-video'); // Get video element
+
+                const summaryText = document.getElementById('summary-text');
+
                 
-                // Start movement on press
-                button.addEventListener('mousedown', () => sendCommand(action));
-                button.addEventListener('touchstart', (e) => {
-                    e.preventDefault(); // prevent double-actions on mobile
-                    sendCommand(action);
-                });
 
-                // Stop movement on release
-                const stopMovement = () => sendCommand('/stop');
-                button.addEventListener('mouseup', stopMovement);
-                button.addEventListener('mouseleave', stopMovement);
-                button.addEventListener('touchend', stopMovement);
-            });
+                let findPollingInterval;
 
-            // --- Existing Find Person & Summary Script ---
-            const findPersonForm = document.getElementById('find-person-form');
-            const loadingIndicator = document.getElementById('loading-indicator');
-            const resultsText = document.getElementById('results-text');
-            const resultImage = document.getElementById('result-image');
-            const summaryText = document.getElementById('summary-text');
-            let pollingInterval; // To hold the interval ID for polling
+                let summaryPollingInterval;
 
-            function pollForSummary(jobId) {
-                // Clear any existing polling
-                if (pollingInterval) {
-                    clearInterval(pollingInterval);
+    
+
+                // --- Polling Functions ---
+
+                function pollForSummary(jobId) {
+
+                    if (summaryPollingInterval) clearInterval(summaryPollingInterval);
+
+                    summaryPollingInterval = setInterval(() => {
+
+                        fetch(`/summary_status/${jobId}`)
+
+                            .then(response => response.json())
+
+                            .then(jobData => {
+
+                                console.log("Summary Poll Response:", jobData);
+
+                                if (jobData.status === 'completed' || jobData.status === 'error') {
+
+                                    clearInterval(summaryPollingInterval);
+
+                                    summaryText.textContent = jobData.summary;
+
+                                } else if (jobData.status === 'processing') {
+
+                                    summaryText.textContent = 'Summarizing...';
+
+                                } else {
+
+                                    clearInterval(summaryPollingInterval);
+
+                                    summaryText.textContent = 'Could not retrieve summary.';
+
+                                }
+
+                            })
+
+                            .catch(error => {
+
+                                console.error('Summary Polling Error:', error);
+
+                                clearInterval(summaryPollingInterval);
+
+                                summaryText.textContent = 'Error checking summary status.';
+
+                            });
+
+                    }, 3000);
+
                 }
 
-                pollingInterval = setInterval(() => {
-                    fetch(`/summary_status/${jobId}`)
-                        .then(response => response.json())
-                        .then(jobData => {
-                            if (jobData.status === 'completed' || jobData.status === 'error') {
-                                // Stop polling once the job is done
-                                clearInterval(pollingInterval);
-                                summaryText.textContent = jobData.summary;
-                            } else if (jobData.status === 'processing') {
-                                summaryText.textContent = 'Summarizing...';
-                            } else {
-                                // Handle cases like 'not_found'
-                                clearInterval(pollingInterval);
-                                summaryText.textContent = 'Could not retrieve summary.';
-                            }
-                        })
-                        .catch(error => {
-                            console.error('Polling Error:', error);
-                            clearInterval(pollingInterval);
-                            summaryText.textContent = 'Error checking summary status.';
-                        });
-                }, 3000); // Poll every 3 seconds
-            }
+    
 
-            findPersonForm.addEventListener('submit', function(event) {
-                event.preventDefault();
+                function pollForFindResult(jobId, personToFind) {
 
-                // Show loading indicator and reset UI
-                loadingIndicator.style.display = 'block';
-                resultsText.textContent = 'Recognizing...';
-                summaryText.textContent = '...';
-                resultImage.src = '';
-                resultImage.style.display = 'none';
-                if (pollingInterval) {
-                    clearInterval(pollingInterval);
+                    if (findPollingInterval) clearInterval(findPollingInterval);
+
+                    findPollingInterval = setInterval(() => {
+
+                        fetch(`/find_status/${jobId}`)
+
+                            .then(response => response.json())
+
+                            .then(jobData => {
+
+                                console.log("Find Poll Response:", jobData);
+
+                                let isDone = false;
+
+                                switch (jobData.status) {
+
+                                                                        case 'searching':
+
+                                                                            const actionText = jobData.action ? `: ${jobData.action}` : '...';
+
+                                                                            resultsText.textContent = `Searching for ${personToFind}${actionText}`;
+
+                                                                            break;
+
+                                    case 'found':
+
+                                        isDone = true;
+
+                                        loadingIndicator.style.display = 'none';
+
+                                        findButton.disabled = false;
+
+                                        resultsText.textContent = 'Found: ' + jobData.names.join(', ');
+
+                                        
+
+                                        // Display image
+
+                                        if (jobData.result_image_path) {
+
+                                            const imageUrl = `/captures/${jobData.result_image_path}?t=${new Date().getTime()}`;
+
+                                            resultImage.src = imageUrl;
+
+                                            resultImage.style.display = 'block';
+
+                                        }
+
+                                        
+
+                                                                            // Display video
+
+                                        
+
+                                                                            if (jobData.result_video_path) {
+
+                                        
+
+                                                                                console.log("Found video path:", jobData.result_video_path); // DEBUG
+
+                                        
+
+                                                                                const videoUrl = `/captures/${jobData.result_video_path}?t=${new Date().getTime()}`;
+
+                                        
+
+                                                                                console.log("Setting video URL to:", videoUrl); // DEBUG
+
+                                        
+
+                                                                                resultVideo.src = videoUrl;
+
+                                        
+
+                                                                                resultVideo.style.display = 'block';
+
+                                        
+
+                                                                                console.log("Video element display style set to 'block'"); // DEBUG
+
+                                        
+
+                                                                            }
+
+                                        
+
+                                        
+
+                                        
+
+                                                                            // Start summary polling
+
+                                        if (jobData.summary_job_id) {
+
+                                            summaryText.textContent = 'Summary pending...';
+
+                                            pollForSummary(jobData.summary_job_id);
+
+                                        } else {
+
+                                            summaryText.textContent = 'No summary was generated.';
+
+                                        }
+
+                                        break;
+
+                                    case 'not_found_timeout':
+
+                                        isDone = true;
+
+                                        loadingIndicator.style.display = 'none';
+
+                                        findButton.disabled = false;
+
+                                        resultsText.textContent = `Could not find ${personToFind} within the time limit.`;
+
+                                        break;
+
+                                    case 'error':
+
+                                        isDone = true;
+
+                                        loadingIndicator.style.display = 'none';
+
+                                        findButton.disabled = false;
+
+                                        resultsText.textContent = `Error during search: ${jobData.message || 'Unknown error'}`;
+
+                                        break;
+
+                                }
+
+                                if (isDone) {
+
+                                    clearInterval(findPollingInterval);
+
+                                }
+
+                            })
+
+                            .catch(error => {
+
+                                console.error('Find Polling Error:', error);
+
+                                clearInterval(findPollingInterval);
+
+                                loadingIndicator.style.display = 'none';
+
+                                findButton.disabled = false;
+
+                                resultsText.textContent = 'A network error occurred during the search.';
+
+                            });
+
+                    }, 2000); // Poll every 2 seconds
+
                 }
 
-                fetch('/find_person', {
-                    method: 'POST'
-                })
-                .then(response => response.json())
-                .then(data => {
-                    loadingIndicator.style.display = 'none';
+    
 
-                    if (data.status === 'success') {
-                        // Update the text with recognized names
-                        if (data.names && data.names.length > 0) {
-                            resultsText.textContent = 'Found: ' + data.names.join(', ');
-                        } else {
-                            resultsText.textContent = 'No one recognized.';
-                        }
+                // --- Form Submission Handler ---
 
-                        // Update the image source if a result image path is provided
-                        if (data.result_image_path) {
-                            const imageUrl = `/captures/${data.result_image_path}?t=${new Date().getTime()}`;
-                            resultImage.src = imageUrl;
-                            resultImage.style.display = 'block';
-                        }
-                        
-                        // If we get a job_id, start polling for the summary
-                        if (data.job_id) {
-                            summaryText.textContent = 'Summary pending...';
-                            pollForSummary(data.job_id);
-                        } else {
-                            summaryText.textContent = 'No summary was generated.';
-                        }
+                findPersonForm.addEventListener('submit', function(event) {
 
-                    } else {
-                        // Handle errors from the backend recognition step
-                        resultsText.textContent = 'Error: ' + data.message;
-                        summaryText.textContent = '...';
+                    event.preventDefault();
+
+                    
+
+                    const personToFind = personSelect.value;
+
+                    if (!personToFind) {
+
+                        alert('Please select a person to find.');
+
+                        return;
+
                     }
-                })
-                .catch(error => {
-                    // Handle network errors
-                    loadingIndicator.style.display = 'none';
-                    resultsText.textContent = 'A network error occurred.';
+
+    
+
+                    // Reset UI for a new search
+
+                    loadingIndicator.style.display = 'block';
+
+                    findButton.disabled = true;
+
+                    resultsText.textContent = `Initiating search for ${personToFind}...`;
+
                     summaryText.textContent = '...';
-                    console.error('Error:', error);
+
+                    resultImage.src = '';
+
+                    resultImage.style.display = 'none';
+
+                    resultVideo.src = '';
+
+                    resultVideo.style.display = 'none';
+
+                    if (findPollingInterval) clearInterval(findPollingInterval);
+
+                    if (summaryPollingInterval) clearInterval(summaryPollingInterval);
+
+    
+
+                    // Start the find person job
+
+                    fetch('/find_person', {
+
+                        method: 'POST',
+
+                        headers: { 'Content-Type': 'application/json' },
+
+                        body: JSON.stringify({ name: personToFind }),
+
+                    })
+
+                    .then(response => response.json())
+
+                    .then(data => {
+
+                        if (data.status === 'searching' && data.job_id) {
+
+                            // Start polling for the find result
+
+                            pollForFindResult(data.job_id, personToFind);
+
+                        } else {
+
+                            // Handle initial request error
+
+                            loadingIndicator.style.display = 'none';
+
+                            findButton.disabled = false;
+
+                            resultsText.textContent = 'Error starting search: ' + (data.message || 'Unknown error');
+
+                        }
+
+                    })
+
+                    .catch(error => {
+
+                        console.error('Find Person Submit Error:', error);
+
+                        loadingIndicator.style.display = 'none';
+
+                        findButton.disabled = false;
+
+                        resultsText.textContent = 'A network error occurred trying to start the search.';
+
+                    });
+
                 });
+
             });
-        });
-    </script>
+
+        </script>
 
 </body>
 </html>

@@ -57,7 +57,7 @@ class RecognitionService:
         self.has_known_reid = len(self.known_reid_embeddings) > 0
         print("RecognitionService initialized successfully.")
 
-    def recognize(self, image_bgr):
+    def recognize(self, image_bgr, target_name=None):
         """
         Performs the full recognition pipeline on a given image.
         :param image_bgr: The image to process in BGR format (from cv2.imread).

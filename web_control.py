@@ -1,4 +1,4 @@
-from flask import Flask, render_template, redirect, url_for, jsonify, send_from_directory
+from flask import Flask, render_template, redirect, url_for, jsonify, send_from_directory, request
 from motor_control import ScoutBot
 from camera_module import ScoutCamera
 from recognition_service import RecognitionService # <-- IMPORT
@@ -10,6 +10,7 @@ import threading
 from uuid import uuid4
 import cv2 # <-- IMPORT
 import datetime # <-- IMPORT
+import time # <-- IMPORT
 
 # --- Initialization ---
 app = Flask(__name__)
@@ -17,6 +18,7 @@ CAPTURE_DIR = "captures"
 
 # In-memory store for background job statuses
 summary_jobs = {}
+find_jobs = {}
 
 # Initialize Hardware Control Objects & Recognition Service
 scout_bot = ScoutBot()
@@ -63,6 +65,105 @@ def run_summary_in_background(job_id, image_path):
         summary_jobs[job_id] = {'status': 'error', 'summary': f"An unexpected error occurred: {e}"}
 
 
+def _check_view_for_person(job_id, target_name):
+    """
+    Helper function: Captures one image, runs recognition, and updates the job status if the person is found.
+    Returns True if person is found, False otherwise.
+    """
+    try:
+        find_jobs[job_id]['action'] = 'Analyzing view'
+        
+        # Capture and recognize
+        raw_image_path = scout_camera.capture_image()
+        image_bgr = cv2.imread(raw_image_path)
+        if image_bgr is None:
+            print(f"[{job_id}] Warning: Could not read image file.")
+            return False
+
+        recognized_names, annotated_image = recognition_service.recognize(image_bgr, target_name=target_name)
+
+        if target_name in recognized_names:
+            print(f"[{job_id}] Found '{target_name}'!")
+            
+            # Save the successful image
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            image_filename = f"recognition_result_{timestamp}.jpg"
+            image_path = os.path.join(CAPTURE_DIR, image_filename)
+            cv2.imwrite(image_path, annotated_image)
+            print(f"[{job_id}] Saved annotated image to {image_path}")
+
+            # Record a 5-second video clip
+            video_path = scout_camera.record_video(duration=5)
+            video_filename = os.path.basename(video_path)
+            print(f"[{job_id}] Saved video clip to {video_path}")
+            
+            # Automatically start the summarization task
+            summary_job_id = str(uuid4())
+            summary_thread = threading.Thread(target=run_summary_in_background, args=(summary_job_id, image_path))
+            summary_thread.start()
+            print(f"[{job_id}] Dispatched summarization job {summary_job_id}")
+
+            # Update status with the final result
+            find_jobs[job_id] = {
+                'status': 'found',
+                'names': recognized_names,
+                'result_image_path': image_filename,
+                'result_video_path': video_filename,
+                'summary_job_id': summary_job_id
+            }
+            return True # Person found
+            
+        return False # Person not found
+
+    except Exception as e:
+        print(f"[{job_id}] Error in _check_view_for_person: {e}", file=sys.stderr)
+        find_jobs[job_id] = {'status': 'error', 'message': str(e)}
+        return True # Return True to stop the search loop on error
+
+
+def run_find_person_in_background(job_id, target_name, timeout=60):
+    """
+    Runs the pan-and-scan recognition loop in a background thread.
+    Updates the find_jobs dictionary with the status.
+    """
+    print(f"[{job_id}] Starting pan-and-scan search for '{target_name}'")
+    find_jobs[job_id] = {'status': 'searching', 'action': 'Starting scan'}
+    
+    start_time = time.time()
+
+    try:
+        while time.time() - start_time < timeout:
+            # 1. Look Center
+            if _check_view_for_person(job_id, target_name): return
+
+            # 2. Pan Left
+            print(f"[{job_id}] Action: Panning left")
+            find_jobs[job_id]['action'] = 'Panning left'
+            scout_bot.left(duration=1.5)
+            if _check_view_for_person(job_id, target_name): return
+            
+            # 3. Pan Right (past center)
+            print(f"[{job_id}] Action: Panning right")
+            find_jobs[job_id]['action'] = 'Panning right'
+            scout_bot.right(duration=3.0)
+            if _check_view_for_person(job_id, target_name): return
+            
+            # 4. Return to Center
+            print(f"[{job_id}] Action: Re-centering")
+            find_jobs[job_id]['action'] = 'Re-centering'
+            scout_bot.left(duration=1.5)
+            # Loop will continue until timeout
+
+    except Exception as e:
+        print(f"[{job_id}] Critical error in find loop: {e}", file=sys.stderr)
+        find_jobs[job_id] = {'status': 'error', 'message': str(e)}
+        return
+            
+    # If the loop finishes without finding the person
+    print(f"[{job_id}] Search timed out after {timeout} seconds.")
+    find_jobs[job_id] = {'status': 'not_found_timeout'}
+
+
 # --- Web Routes ---
 @app.route('/')
 def index():
@@ -102,60 +203,34 @@ def stop():
 # --- Main Application Route ---
 @app.route('/find_person', methods=['POST'])
 def find_person():
-    print("\n--- Initiating Find Sequence (Optimized) ---")
+    data = request.get_json()
+    target_name = data.get('name') if data else None
+
+    if not target_name:
+        return jsonify({'status': 'error', 'message': 'No name provided to search for.'}), 400
+
+    job_id = str(uuid4())
+    # Start the search loop in a background thread
+    thread = threading.Thread(target=run_find_person_in_background, args=(job_id, target_name))
+    thread.start()
     
-    try:
-        # 1. Capture a new image
-        raw_image_path = scout_camera.capture_image()
-        print(f"Image captured: {raw_image_path}")
-
-        # 2. Read the image with OpenCV for processing
-        image_bgr = cv2.imread(raw_image_path)
-        if image_bgr is None:
-            raise Exception(f"Could not read image file: {raw_image_path}")
-
-        # 3. Perform recognition using the pre-loaded service
-        recognized_names, annotated_image = recognition_service.recognize(image_bgr)
-        print(f"Recognition completed. Found: {recognized_names}")
-
-        # 4. Save the annotated image
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        recognition_image_filename = f"recognition_result_{timestamp}.jpg"
-        recognition_image_path = os.path.join(CAPTURE_DIR, recognition_image_filename)
-        cv2.imwrite(recognition_image_path, annotated_image)
-        print(f"Annotated image saved: {recognition_image_path}")
-        
-        job_id = None
-        # 5. If a known person was recognized, start summarizer in the background
-        if recognized_names and "Unknown" not in recognized_names:
-            job_id = str(uuid4())
-            # Use the annotated image for summarization
-            thread = threading.Thread(target=run_summary_in_background, args=(job_id, recognition_image_path))
-            thread.start()
-            print(f"Started background summarization with job_id: {job_id}")
-        else:
-            print("No known person found or only 'Unknown' found. Skipping summarization.")
-
-        return jsonify({
-            'status': 'success',
-            'names': recognized_names,
-            'result_image_path': recognition_image_filename,
-            'job_id': job_id
-        })
-        
-    except Exception as e:
-        error_message = f"An unexpected error occurred: {e}"
-        print(error_message, file=sys.stderr)
-        # It's good to also log the traceback for debugging
-        import traceback
-        traceback.print_exc()
-        return jsonify({'status': 'error', 'message': error_message}), 500
+    print(f"Dispatched background search for '{target_name}' with job_id: {job_id}")
+    
+    # Immediately return the job_id so the frontend can start polling
+    return jsonify({'status': 'searching', 'job_id': job_id})
 
 
 @app.route('/summary_status/<job_id>')
 def summary_status(job_id):
     """Endpoint for the frontend to poll for summary results."""
     job = summary_jobs.get(job_id, {'status': 'not_found', 'summary': 'Job not found.'})
+    return jsonify(job)
+
+
+@app.route('/find_status/<job_id>')
+def find_status(job_id):
+    """Endpoint for the frontend to poll for find person results."""
+    job = find_jobs.get(job_id, {'status': 'not_found', 'message': 'Job not found.'})
     return jsonify(job)
 
 

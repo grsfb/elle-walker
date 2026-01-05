@@ -15,9 +15,12 @@ class ScoutCamera:
         self.picam2 = Picamera2()
         self.save_dir = save_dir
         
-        # Configure camera settings for still image capture (headless)
-        camera_config = self.picam2.create_still_configuration(main={"size": (640, 480)})
-        self.picam2.configure(camera_config)
+        # Create separate configurations for still and video
+        self.still_config = self.picam2.create_still_configuration(main={"size": (640, 480)})
+        self.video_config = self.picam2.create_video_configuration(main={"size": (640, 480)})
+        
+        # Configure camera for stills by default
+        self.picam2.configure(self.still_config)
         
         # Set some initial camera controls for better image quality
         self.picam2.set_controls({"AeExposureMode": controls.AeExposureModeEnum.Short,
@@ -28,7 +31,9 @@ class ScoutCamera:
         if not os.path.exists(self.save_dir):
             os.makedirs(self.save_dir)
             
-        print("ScoutCamera initialized.")
+        # Start the camera once at initialization
+        self.picam2.start()
+        print("ScoutCamera initialized and started.")
 
     def start_preview(self):
         """Starts the camera preview."""
@@ -48,16 +53,15 @@ class ScoutCamera:
         :param filename: Optional filename. If None, a timestamped filename is used.
         :return: The full path to the saved image.
         """
+        # Switch to still configuration
+        self.picam2.switch_mode(self.still_config)
+        
         if filename is None:
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"image_{timestamp}.jpg"
         
         file_path = os.path.join(self.save_dir, filename)
         
-        # Ensure camera is started before capturing
-        if not self.picam2.started:
-            self.picam2.start()
-            
         self.picam2.capture_file(file_path)
         print(f"Image captured: {file_path}")
         return file_path
@@ -69,15 +73,14 @@ class ScoutCamera:
         :param filename: Optional filename. If None, a timestamped filename is used.
         :return: The full path to the saved video.
         """
+        # Switch to video configuration
+        self.picam2.switch_mode(self.video_config)
+
         if filename is None:
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"video_{timestamp}.mp4"
             
         file_path = os.path.join(self.save_dir, filename)
-
-        # Ensure camera is started before recording
-        if not self.picam2.started:
-            self.picam2.start()
 
         print(f"Recording video to {file_path} for {duration} seconds...")
         self.picam2.start_and_record_video(file_path, duration=duration)

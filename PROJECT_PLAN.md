@@ -29,8 +29,10 @@ The goal is to create an autonomous mobile robot named "Scout". Scout will be ab
         - Ultrasonic Sensors (for obstacle avoidance).
         - (Optional) LiDAR for mapping (more advanced).
     - **Audio (for later phases):**
-        - USB Microphone.
+        - USB Microphone (for "wake-up word" and voice commands).
         - Small speaker.
+    - **Display (for later phases):**
+        - Small LCD/OLED Screen (e.g., via SPI/I2C).
 - **Software & Technology Stack:**
     - **Operating System:** Raspberry Pi OS (64-bit).
     - **Programming Language:** Python.
@@ -60,7 +62,9 @@ The goal is to create an autonomous mobile robot named "Scout". Scout will be ab
 **Tasks:**
 1.  Integrate ultrasonic sensors to detect obstacles.
 2.  Implement a basic obstacle avoidance algorithm (e.g., "if obstacle ahead, stop, turn right, and continue").
-3.  (Advanced) Implement SLAM (Simultaneous Localization and Mapping) to create a 2D map of your home. This allows for more intelligent path planning.
+3.  **(Advanced) Implement SLAM (Simultaneous Localization and Mapping):** Create a 2D map of your home to enable intelligent path planning and "Travel Mode".
+    - *Note: The plan is to use LiDAR-based SLAM, as it is more reliable and less computationally expensive for the Raspberry Pi than camera-based vSLAM.*
+4.  **(Advanced) Implement Camera Tilt Mechanism:** Integrate a servo motor and pan-tilt bracket to allow the camera to scan vertically, making person detection more robust.
 
 ### Phase 4: Person Detection & Data Capture
 
@@ -68,7 +72,9 @@ The goal is to create an autonomous mobile robot named "Scout". Scout will be ab
 
 **Tasks:**
 1.  Use a pre-trained computer vision model (e.g., YOLOv8, or Haar Cascades from OpenCV) to detect people in the camera feed.
-2.  Write a "search" script where the robot roams from room to room until it detects a person.
+2.  **Develop Search Strategy Logic:**
+    - **"Travel Mode":** Write logic for navigating between pre-defined waypoints on the map. During travel, a low-frequency "Passive Scan" will run (e.g., checking one frame every 2 seconds) to opportunistically detect the target person without slowing down movement.
+    - **"Search Mode":** Write the script for the "Pan-and-Scan" routine. This is a thorough, stationary search where the robot stops at a waypoint and actively pans left and right (and later, tilts up and down) to find the target.
 3.  Once a person is detected, the robot will stop and capture a clear image or a short 5-second video clip.
 
 ### Phase 5: AI Integration for Summarization
@@ -82,7 +88,7 @@ The goal is to create an autonomous mobile robot named "Scout". Scout will be ab
 
 ### Phase 6: User Interface & Reporting
 
-**Objective:** Deliver the final summary to the user.
+**Objective:** Deliver the final summary to the user and complete the mission loop.
 
 **Tasks:**
 1.  **Web Interface:** Create a page in the web app where the latest summary and the corresponding image/video can be viewed.
@@ -90,12 +96,17 @@ The goal is to create an autonomous mobile robot named "Scout". Scout will be ab
     - Connect a speaker to the Raspberry Pi.
     - Use a Text-to-Speech (TTS) library (like `gTTS`) to convert the summary text into an audio file.
     - Write a script to play the audio file on the robot.
-3.  **Bringing it all together:** Create the main application loop:
-    - Listen for a command (e.g., a button press in the web app).
-    - Start the "search" routine.
+3.  **Wake-up Word Activation:**
+    - Use the microphone and a lightweight speech recognition library (e.g., `Porcupine`, `vosk`) to enable hands-free activation of the robot's search mission.
+4.  **On-board Display Screen:**
+    - Integrate a small LCD or OLED screen to show the robot's current status, IP address, or simple results.
+5.  **Bringing it all together:** Create the main application loop:
+    - Listen for a command (e.g., a button press in the web app or a spoken wake-up word).
+    - **Save current location as "Home".**
+    - Start the "search" routine (traveling between waypoints).
     - Once the person is found and data is captured, call the LLM for a summary.
-    - Navigate back to a "home" location.
-    - Report the summary (either via web or audio).
+    - **Navigate back to the "Home" location.**
+    - Report the summary (either via web, display, or audio).
 
 ## 3. Task Hierarchy & Estimates
 
