@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual Environments
+.facerec_venv/
+.web_venv/
+.llm_venv/
+
+# Captured images and debug files
+captures/
+debug.txt
+model_zoo_content.txt
+
+# IDE and OS specific
+.idea/
+.vscode/
+*.DS_Store
