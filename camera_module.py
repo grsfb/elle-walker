@@ -47,18 +47,21 @@ class ScoutCamera:
         self.picam2.stop()
         print("Camera preview stopped.")
 
-    def capture_image(self, filename=None):
+    def capture_image(self, filename_prefix="image_"):
         """
-        Captures a still image.
-        :param filename: Optional filename. If None, a timestamped filename is used.
+        Captures a still image, allowing time for auto-exposure to adjust.
+        :param filename_prefix: Optional prefix for the filename. A timestamp is appended.
         :return: The full path to the saved image.
         """
         # Switch to still configuration
         self.picam2.switch_mode(self.still_config)
         
-        if filename is None:
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"image_{timestamp}.jpg"
+        # Give the camera's auto-exposure and auto-white-balance algorithms time to work
+        print("Allowing camera to adjust to lighting...")
+        sleep(2)
+        
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{filename_prefix}{timestamp}.jpg"
         
         file_path = os.path.join(self.save_dir, filename)
         

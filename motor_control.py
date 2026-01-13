@@ -1,4 +1,5 @@
-from gpiozero import Robot, PWMOutputDevice
+from gpiozero import Robot, Motor
+from gpiozero.pins.rpigpio import RPiGPIOFactory # Use RPi.GPIO pin factory
 from time import sleep
 
 # ===========================================================================
@@ -8,9 +9,9 @@ from time import sleep
 # You will connect the GPIO pins on your Raspberry Pi to the corresponding
 # input pins on the motor driver.
 
-# Left Motor Pins
-LEFT_MOTOR_FORWARD_PIN = 20   # Connected to IN1 on the motor driver
-LEFT_MOTOR_BACKWARD_PIN = 21  # Connected to IN2 on the motor driver
+# Left Motor Pins (Swapped to correct rotation)
+LEFT_MOTOR_FORWARD_PIN = 21   # Was 20
+LEFT_MOTOR_BACKWARD_PIN = 20  # Was 21
 LEFT_MOTOR_ENABLE_PIN = 16    # Connected to ENA on the motor driver
 
 # Right Motor Pins
@@ -21,65 +22,62 @@ RIGHT_MOTOR_ENABLE_PIN = 13   # Connected to ENB on the motor driver
 
 class ScoutBot:
     """
-    A class to control the robot's movement.
+    A class to control the robot's movement, simplified to use gpiozero's
+    built-in PWM handling for the Robot class.
     """
-    def __init__(self):
-        # The gpiozero Robot class takes the left and right motor pins as arguments.
-        # It handles the logic for forward, backward, left, and right movements.
-        self.robot = Robot(
-            left=(LEFT_MOTOR_FORWARD_PIN, LEFT_MOTOR_BACKWARD_PIN),
-            right=(RIGHT_MOTOR_FORWARD_PIN, RIGHT_MOTOR_BACKWARD_PIN)
+    def __init__(self, pin_factory=None):
+        # Use a provided pin_factory or create a new one. This allows sharing
+        # the factory between multiple devices.
+        if pin_factory is None:
+            pin_factory = RPiGPIOFactory()
+        
+        # Create individual Motor objects for left and right,
+        # passing the enable pin for PWM control.
+        left_motor = Motor(
+            forward=LEFT_MOTOR_FORWARD_PIN,
+            backward=LEFT_MOTOR_BACKWARD_PIN,
+            enable=LEFT_MOTOR_ENABLE_PIN,
+            pin_factory=pin_factory
+        )
+        right_motor = Motor(
+            forward=RIGHT_MOTOR_FORWARD_PIN,
+            backward=RIGHT_MOTOR_BACKWARD_PIN,
+            enable=RIGHT_MOTOR_ENABLE_PIN,
+            pin_factory=pin_factory
         )
         
-        # We use PWMOutputDevice for the enable pins to control speed.
-        # For now, we'll just set it to full speed (value=1).
-        self.left_motor_speed = PWMOutputDevice(LEFT_MOTOR_ENABLE_PIN)
-        self.right_motor_speed = PWMOutputDevice(RIGHT_MOTOR_ENABLE_PIN)
-        
-        # Set initial speed to maximum
-        self.set_speed(1)
+        # Pass the Motor objects to the Robot constructor.
+        self.robot = Robot(left=left_motor, right=right_motor)
         print("Robot initialized.")
 
-    def set_speed(self, speed):
-        """
-        Sets the speed of the robot.
-        :param speed: A value between 0 (stop) and 1 (full speed).
-        """
-        if 0 <= speed <= 1:
-            self.left_motor_speed.value = speed
-            self.right_motor_speed.value = speed
-            print(f"Speed set to {speed}")
-        else:
-            print("Speed must be between 0 and 1.")
-
-    def forward(self, duration=None):
+    def forward(self, speed=1, duration=None):
         """Makes the robot move forward."""
-        print("Moving forward...")
-        self.robot.forward()
+        print(f"Moving forward at speed {speed}...")
+        self.robot.forward(speed=speed)
         if duration:
             sleep(duration)
             self.stop()
 
-    def backward(self, duration=None):
+    def backward(self, speed=1, duration=None):
         """Makes the robot move backward."""
-        print("Moving backward...")
-        self.robot.backward()
+        print(f"Moving backward at speed {speed}...")
+        self.robot.backward(speed=speed)
         if duration:
             sleep(duration)
             self.stop()
 
-    def left(self, duration=None):
+    def left(self, speed=1, duration=None):
         """Makes the robot turn left."""
-        print("Turning left...")
-        self.robot.left()
+        print(f"Turning left at speed {speed}...")
+        self.robot.left(speed=speed)
         if duration:
             sleep(duration)
             self.stop()
 
-    def right(self, duration=None):
+    def right(self, speed=1, duration=None):
         """Makes the robot turn right."""
-        print("Turning right...")
-        self.robot.right()
+        print(f"Turning right at speed {speed}...")
+        self.robot.right(speed=speed)
         if duration:
             sleep(duration)
             self.stop()
@@ -92,11 +90,7 @@ class ScoutBot:
     def cleanup(self):
         """Cleans up the GPIO resources."""
         print("Disabling motors and cleaning up GPIO...")
-        self.robot.stop()
-        self.set_speed(0)
-        self.robot.close()
-        self.left_motor_speed.close()
-        self.right_motor_speed.close()
+        self.robot.close() # This handles stopping and cleaning up all pins.
         print("GPIO resources cleaned up.")
 
 
