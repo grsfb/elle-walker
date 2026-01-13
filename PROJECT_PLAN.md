@@ -40,7 +40,30 @@ This document outlines the development phases for building an autonomous robot c
 
 ---
 
-## 6. Future Enhancements
+### Phase 6: Future Enhancements
 - **[TODO]** Upgrade to a 3-sensor (left, center, right) ultrasonic array for improved navigation.
 - **[TODO]** Add a rear-facing sensor to prevent collisions when backing up.
 - **[TODO]** Integrate downward-facing IR sensors to detect drop-offs (e.g., stairs).
+
+---
+
+### Phase 7: Advanced Voice-Driven Interaction & Reporting
+- **[TODO] Wake Word & STT Integration:**
+    - Integrate `wake_word_listener.py` to run continuously in the background.
+    - Upon wake word detection, trigger `speech_to_text.py` to capture a command.
+- **[TODO] SLAM & Navigation (Advanced):**
+    - Integrate a LIDAR sensor and a SLAM (Simultaneous Localization and Mapping) framework like ROS to build and use a map of the environment.
+    - Implement pathfinding to navigate to labeled locations on the map (e.g., "kitchen").
+    - Implement "return to origin" functionality.
+- **[TODO] Command Execution Loop:**
+    - Create a main control loop that can parse commands from STT (e.g., "go to", "find person").
+    - Trigger navigation and search tasks based on parsed commands.
+- **[TODO] Video on Detection:**
+    - After successfully finding a person, automatically record a 5-second video clip.
+    - Make the video clip accessible through the `web_control.py` portal.
+- **[TODO] Visual Scene Description (Advanced):**
+    - Integrate a Vision-Language Model (VLM).
+    - Create a function that takes the image of the found person and generates a text description of the scene (e.g., "Gaurav was found in the kitchen near the table").
+- **[TODO] Task Reporting & Notification:**
+    - Integrate `speak.py` for text-to-speech announcements.
+    - On task completion, have the robot return to its origin, announce the visual summary, and direct the user to the web portal to view the video.
