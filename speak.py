@@ -8,6 +8,17 @@ try:
     engine = pyttsx3.init(driverName='espeak')
     print("--- TTS Engine Initialized Successfully ---")
     
+    print("\n--- Available Voices ---")
+    voices = engine.getProperty('voices')
+    for voice in voices:
+        print(f"  ID: {voice.id}")
+        print(f"  Name: {voice.name}")
+        print(f"  Languages: {voice.languages}")
+        print(f"  Gender: {voice.gender}")
+        print(f"  Age: {voice.age}")
+        print("-" * 20)
+    print("------------------------")
+
 except Exception as e:
     print(f"ERROR: Failed to initialize TTS engine: {e}", file=sys.stderr)
     sys.exit(1) # Exit if the engine fails to start

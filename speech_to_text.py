@@ -13,9 +13,9 @@ from pydub import AudioSegment
 MODEL_PATH = "models/vosk-model-small-en-us-0.15" 
 
 # Audio stream configuration
-MICROPHONE_NATIVE_RATE = 44100 # Microphone's native sample rate
+MICROPHONE_NATIVE_RATE = 16000 # Microphone's native sample rate
 VOSK_MODEL_SAMPLE_RATE = 16000 # Vosk model's required sample rate
-DEVICE_ID = 0 # Your microphone's sounddevice index
+DEVICE_ID = 1 # Your microphone's sounddevice index
 
 # Queue for audio data from the callback
 q = queue.Queue()
@@ -55,19 +55,8 @@ try:
             if not q.empty():
                 data = q.get() # data is a numpy array (int16) at MICROPHONE_NATIVE_RATE
 
-                # Convert numpy array to pydub AudioSegment for efficient resampling
-                audio_segment = AudioSegment(
-                    data.tobytes(), 
-                    frame_rate=MICROPHONE_NATIVE_RATE,
-                    sample_width=data.dtype.itemsize, # 2 bytes for int16
-                    channels=1
-                )
-                
-                # Resample using pydub
-                resampled_audio_segment = audio_segment.set_frame_rate(VOSK_MODEL_SAMPLE_RATE)
-                
-                # Get raw bytes from pydub for Vosk
-                audio_data_for_vosk = resampled_audio_segment.raw_data
+                # Data is already at VOSK_MODEL_SAMPLE_RATE and correct format
+                audio_data_for_vosk = data.tobytes()
 
                 if rec.AcceptWaveform(audio_data_for_vosk):
                     result = json.loads(rec.Result())
