@@ -8,6 +8,7 @@ import spidev
 import logging
 import random
 import math
+import textwrap
 from PIL import Image, ImageDraw, ImageFont
 
 # Add the Waveshare Python library path to sys.path
@@ -50,6 +51,8 @@ class LCD_Display:
 
         # Eye state attributes
         self.emotion = "neutral"
+        self.message = None
+        self.message_end_time = 0
         
         # Blinking attributes
         self.last_blink_time = time.time()
@@ -109,10 +112,6 @@ class LCD_Display:
         self.smileys = []
         self.last_smiley_spawn = time.time()
         
-        # Speaking mode - funny smileys animation
-        self.smileys = []
-        self.last_smiley_spawn = time.time()
-        
         # Listening mode animation
         self.listening_pulse_intensity = 0.5
         self.listening_pulse_direction = 1
@@ -162,6 +161,34 @@ class LCD_Display:
 
     def draw_eyes(self):
         """Main drawing function"""
+        if self.message:
+            self.draw.rectangle((0, 0, self.disp.height, self.disp.width), fill=self.bg_color)
+            font = FONT_DEFAULT_LG
+            
+            margin = 10
+            offset = 10
+            max_width = self.disp.height - (margin * 2)
+            
+            avg_char_width = 18
+            wrap_width = max(1, int(max_width / avg_char_width))
+            
+            lines = textwrap.wrap(self.message, width=wrap_width)
+            
+            for line in lines:
+                self.draw.text((margin, offset), line, font=font, fill=(0, 200, 220))
+                offset += font.getsize(line)[1] + 2
+            
+            image_to_show = self.image.rotate(180)
+            self.disp.ShowImage(image_to_show)
+            return
+            
+        if self.emotion == "speaking":
+            self.draw.rectangle((0, 0, self.disp.height, self.disp.width), fill=self.bg_color)
+            self.draw_speaking_smileys()
+            image_to_show = self.image.rotate(180)
+            self.disp.ShowImage(image_to_show)
+            return
+
         # Background - red tint for angry, black for others
         if self.emotion == "angry":
             red_intensity = int(80 + self.angry_flash_intensity * 50)
@@ -577,94 +604,6 @@ class LCD_Display:
         
         return True  # Always needs redraw for smooth pulse
 
-    def draw_speaking_smileys(self):
-        """Draw funny moving smileys all over the screen"""
-        # Draw existing smileys
-        smileys_to_remove = []
-        for smiley in self.smileys:
-            # Update position
-            smiley['x'] += smiley['vx']
-            smiley['y'] += smiley['vy']
-            smiley['age'] += 1
-            
-            # Remove if too old or off screen
-            if smiley['age'] > 100 or smiley['x'] < -20 or smiley['x'] > 340 or smiley['y'] < -20 or smiley['y'] > 340:
-                smileys_to_remove.append(smiley)
-                continue
-            
-            # Draw smiley face
-            size = smiley['size']
-            x, y = int(smiley['x']), int(smiley['y'])
-            color = smiley['color']
-            
-            # Face circle
-            self.draw.ellipse([
-                x - size, y - size,
-                x + size, y + size
-            ], fill=color, outline=(0, 150, 150))
-            
-            # Eyes
-            eye_offset = size // 3
-            eye_size = size // 5
-            self.draw.ellipse([
-                x - eye_offset - eye_size, y - eye_offset - eye_size,
-                x - eye_offset + eye_size, y - eye_offset + eye_size
-            ], fill=(0, 0, 0))
-            self.draw.ellipse([
-                x + eye_offset - eye_size, y - eye_offset - eye_size,
-                x + eye_offset + eye_size, y - eye_offset + eye_size
-            ], fill=(0, 0, 0))
-            
-            # Smile
-            self.draw.arc([
-                x - size // 2, y - size // 3,
-                x + size // 2, y + size // 2
-            ], 0, 180, fill=(0, 0, 0), width=2)
-        
-        # Remove old smileys
-        for smiley in smileys_to_remove:
-            self.smileys.remove(smiley)
-
-    def update_speaking_animation(self):
-        """Spawn new funny smileys while speaking"""
-        if self.emotion != "speaking":
-            self.smileys = []
-            return False
-        
-        now = time.time()
-        # Spawn new smiley every 0.2 seconds
-        if now - self.last_smiley_spawn > 0.2:
-            # Random spawn position (from edges)
-            side = random.choice(['top', 'bottom', 'left', 'right'])
-            if side == 'top':
-                x, y = random.randint(0, 320), -10
-                vx, vy = random.uniform(-1, 1), random.uniform(1, 3)
-            elif side == 'bottom':
-                x, y = random.randint(0, 320), 330
-                vx, vy = random.uniform(-1, 1), random.uniform(-3, -1)
-            elif side == 'left':
-                x, y = -10, random.randint(0, 320)
-                vx, vy = random.uniform(1, 3), random.uniform(-1, 1)
-            else:  # right
-                x, y = 330, random.randint(0, 320)
-                vx, vy = random.uniform(-3, -1), random.uniform(-1, 1)
-            
-            # Random smiley properties
-            colors = [(255, 255, 0), (0, 255, 200), (255, 150, 200), (150, 255, 150)]
-            self.smileys.append({
-                'x': x,
-                'y': y,
-                'vx': vx,
-                'vy': vy,
-                'size': random.randint(10, 20),
-                'age': 0,
-                'color': random.choice(colors)
-            })
-            
-            self.last_smiley_spawn = now
-        
-        return len(self.smileys) > 0  # Needs redraw if there are smileys
-
     def update_listening_animation(self):
         """Animate listening mode: pulsing glow + sound wave bars"""
         if self.emotion != "listening":
@@ -786,7 +725,12 @@ class LCD_Display:
         return needs_redraw
 
     def update(self):
-        needs_redraw = self.update_blinking()
+        needs_redraw = False
+        if self.message and time.time() > self.message_end_time:
+            self.message = None
+            needs_redraw = True
+
+        needs_redraw |= self.update_blinking()
         needs_redraw |= self.update_gaze()
         needs_redraw |= self.update_iris_pulse()  # Pulse for all emotions
         needs_redraw |= self.update_listening_animation()
@@ -803,12 +747,9 @@ class LCD_Display:
         if needs_redraw:
             self.draw_eyes()
 
-    def show_message(self, message, font_size=20, color="WHITE"):
-        self.draw.rectangle((0, 0, self.disp.height, self.disp.width), fill=self.bg_color)
-        font = FONT_DEFAULT_LG if font_size >= 25 else FONT_DEFAULT_SM
-        self.draw.text((10, 10), message, font=font, fill=color)
-        image_to_show = self.image.rotate(180)
-        self.disp.ShowImage(image_to_show)
+    def show_message(self, message, duration=5):
+        self.message = message
+        self.message_end_time = time.time() + duration
 
     def cleanup(self):
         self.disp.module_exit()
